@@ -173,6 +173,38 @@ struct TileGridTests {
         #expect(abs(grid.cellFrames(in: area, gap: 8)[0].width - 200) <= 1)
     }
 
+    @Test func aGapStopsAtAWindowsMinimumWidth() throws {
+        var grid = TileGrid(try #require(TileLayout(rows: 1, columns: 2)))
+        grid.move(.init(axis: .vertical, before: [0], after: [1]), to: 1200, in: area, gap: 8,
+                  minimums: [1: CGSize(width: 700, height: 0)])
+        #expect(abs(grid.cellFrames(in: area, gap: 8)[1].width - 700) <= 1)
+    }
+
+    @Test func aGapStopsAtAWindowsMinimumHeight() throws {
+        var grid = TileGrid(try #require(TileLayout(rows: 2, columns: 1)))
+        grid.move(.init(axis: .horizontal, before: [0], after: [1]), to: 100, in: area, gap: 8,
+                  minimums: [0: CGSize(width: 0, height: 450)])
+        #expect(abs(grid.cellFrames(in: area, gap: 8)[0].height - 450) <= 1)
+    }
+
+    @Test func aLineStopsAtTheLargestMinimumAlongIt() throws {
+        var grid = TileGrid(try #require(TileLayout(rows: 2, columns: 2)))
+        grid.move(.init(axis: .vertical, before: [0, 2], after: [1, 3]), to: 1300, in: area, gap: 8,
+                  minimums: [1: CGSize(width: 500, height: 0), 3: CGSize(width: 700, height: 0)])
+        let cells = grid.cellFrames(in: area, gap: 8)
+        #expect(abs(cells[1].width - 700) <= 1)
+        #expect(abs(cells[3].width - 700) <= 1)
+    }
+
+    @Test func aGapDoesntSnapPastAMinimum() throws {
+        // The even split is out of reach when the right window needs 900 points.
+        var grid = TileGrid(try #require(TileLayout(rows: 1, columns: 2)))
+        let snapped = grid.move(.init(axis: .vertical, before: [0], after: [1]), to: 805, in: area, gap: 8,
+                                minimums: [1: CGSize(width: 900, height: 0)], snap: 12)
+        #expect(!snapped)
+        #expect(abs(grid.cellFrames(in: area, gap: 8)[1].width - 900) <= 1)
+    }
+
     @Test func roundTripsThroughCodable() throws {
         var grid = TileGrid(try #require(TileLayout(rows: 2, columns: 3)))
         grid.move(.init(axis: .horizontal, before: [0], after: [3]), to: 300, in: area, gap: 8)

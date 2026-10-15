@@ -1,7 +1,7 @@
 import AppKit
 
 // Throwaway windows for the end-to-end test. Run as `IsogridFixture <name> <count>`; listens on
-// the distributed notification "dev.isogrid.fixture.<name>" for close, minimize and frame.
+// the distributed notification "dev.isogrid.fixture.<name>" for close, minimize, frame and minimum.
 
 let arguments = CommandLine.arguments
 let name = arguments.count > 1 ? arguments[1] : "A"
@@ -27,6 +27,7 @@ center.addObserver(forName: Notification.Name("dev.isogrid.fixture.\(name)"), ob
     let command = note.userInfo?["command"] as? String ?? ""
     let index = note.userInfo?["index"] as? Int ?? 0
     let frame = note.userInfo?["frame"] as? [Double] ?? []
+    let size = note.userInfo?["size"] as? [Double] ?? []
     MainActor.assumeIsolated {
         guard windows.indices.contains(index) else { return }
         let window = windows[index]
@@ -37,6 +38,8 @@ center.addObserver(forName: Notification.Name("dev.isogrid.fixture.\(name)"), ob
             // Top-left screen coordinates, like the rest of Isogrid.
             let height = NSScreen.screens.first?.frame.height ?? 0
             window.setFrame(NSRect(x: frame[0], y: height - frame[1] - frame[3], width: frame[2], height: frame[3]), display: true)
+        case "minimum" where size.count == 2:
+            window.minSize = NSSize(width: size[0], height: size[1])
         case "quit": NSApp.terminate(nil)
         default: break
         }

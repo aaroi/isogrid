@@ -52,7 +52,7 @@ macOS ties that grant to the app's code signature, so the script also creates a 
 ## Details
 
 - Applying a layout moves each window to the free cell nearest to it, so applying it twice moves nothing.
-- Dragged gaps snap to other edges and even splits within 12 pt.
+- Dragged gaps snap to other edges and even splits within 12 pt, and stop where a window can't get any narrower or shorter.
 - Grids, sets and spacing are saved per display, and survive a monitor reconnecting under a new ID.
 - The menu bar icon draws the current layout. Its menu sets the drag modifier, window spacing and Open at Login.
 
@@ -102,6 +102,7 @@ The end-to-end test needs the Accessibility grant. It opens throwaway windows an
 Each of these came from a failure in real use:
 
 - Moves are rechecked after 80 and 220 ms, because some apps apply a resize late.
+- macOS doesn't tell other apps how small a window can get. Isogrid learns it the first time a window refuses to shrink, moves the gap back to where it fits, and stops later drags there.
 - Group focus only acts on focus that reads the same twice, 80 ms apart. Apps briefly report a stale window while you switch.
 - The window that just lost focus is never raised, so closing one with ⌘W doesn't bring it back.
 - Other apps' windows are raised without activating those apps, which avoids flicker.

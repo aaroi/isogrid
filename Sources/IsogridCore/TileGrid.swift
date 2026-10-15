@@ -113,23 +113,28 @@ public struct TileGrid: Hashable, Sendable {
     }
 
     /// Moves a divider so its gap is centred on `position` (an x for vertical gaps, a y for
-    /// horizontal ones). No cell on either side shrinks below `minimum` points. Within `snap`
-    /// points of another cell's edge or an even grid line, the gap lines up with it exactly.
-    /// Returns whether it snapped.
+    /// horizontal ones). No cell on either side shrinks below `minimum` points, or below its
+    /// entry in `minimums`, the smallest size the window in it accepts. Within `snap` points of
+    /// another cell's edge or an even grid line that respects those limits, the gap lines up
+    /// with it exactly. Returns whether it snapped.
     @discardableResult
     public mutating func move(_ divider: Divider, to position: CGFloat, in area: CGRect, gap: CGFloat,
-                              minimum: CGFloat = 200, snap: CGFloat = 0) -> Bool {
+                              minimum: CGFloat = 200, minimums: [Int: CGSize] = [:], snap: CGFloat = 0) -> Bool {
         let vertical = divider.axis == .vertical
         let origin = vertical ? area.minX : area.minY
         let span = Double((vertical ? area.width : area.height) - gap)
         guard span > 0 else { return false }
-        let smallest = Double(minimum + gap) / span
-        let lower = divider.before.map { (vertical ? cells[$0].minX : cells[$0].minY) + smallest }.max() ?? 0
-        let upper = divider.after.map { (vertical ? cells[$0].maxX : cells[$0].maxY) - smallest }.min() ?? 1
+        func smallest(_ cell: Int) -> Double {
+            let window = minimums[cell].map { vertical ? $0.width : $0.height } ?? 0
+            return Double(max(minimum, window) + gap) / span
+        }
+        let lower = divider.before.map { (vertical ? cells[$0].minX : cells[$0].minY) + smallest($0) }.max() ?? 0
+        let upper = divider.after.map { (vertical ? cells[$0].maxX : cells[$0].maxY) - smallest($0) }.min() ?? 1
         var edge = Double(position - origin - gap / 2) / span
 
         var snapped = false
-        if snap > 0, let target = snapTarget(for: edge, divider: divider, within: Double(snap) / span) {
+        if snap > 0, lower <= upper,
+           let target = snapTarget(for: edge, divider: divider, within: Double(snap) / span, in: lower...upper) {
             edge = target
             snapped = true
         }
@@ -145,7 +150,7 @@ public struct TileGrid: Hashable, Sendable {
 
     /// The nearest edge worth lining up with, either another cell's edge on the same axis or an
     /// even split of the layout, so a dragged gap can find its way back to equal sizes.
-    private func snapTarget(for edge: Double, divider: Divider, within distance: Double) -> Double? {
+    private func snapTarget(for edge: Double, divider: Divider, within distance: Double, in bounds: ClosedRange<Double>) -> Double? {
         let vertical = divider.axis == .vertical
         let moving = Set(divider.before + divider.after)
         let count = vertical ? layout.columns : layout.rows
@@ -155,7 +160,7 @@ public struct TileGrid: Hashable, Sendable {
             candidates += vertical ? [cell.minX, cell.maxX] : [cell.minY, cell.maxY]
         }
         return candidates
-            .filter { $0 > Self.epsilon && $0 < 1 - Self.epsilon && abs($0 - edge) <= distance }
+            .filter { bounds.contains($0) && abs($0 - edge) <= distance }
             .min { abs($0 - edge) < abs($1 - edge) }
     }
 

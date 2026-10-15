@@ -128,24 +128,30 @@ final class Tiler {
 
     /// Some apps apply a resize a beat later, and the window server can finish a drag after
     /// a drop has placed the window. Check again shortly after and correct what didn't land.
+    /// What still doesn't land shows the window's minimum size.
     @concurrent nonisolated static func settle(_ moves: [Move]) async {
         var pending = moves
         for delay in [80, 220] {
             try? await Task.sleep(for: .milliseconds(delay))
             pending = pending.filter { move in move.window.frame.map { !$0.isClose(to: move.frame) } ?? false }
-            if pending.isEmpty { return }
+            if pending.isEmpty { break }
             for move in pending { move.window.setFrame(move.frame) }
         }
-        try? await Task.sleep(for: .milliseconds(120))
+        var kept: [CGWindowID: CGSize] = [:]
+        if !pending.isEmpty { try? await Task.sleep(for: .milliseconds(120)) }
         for move in pending {
             guard let frame = move.window.frame, !frame.isClose(to: move.frame) else { continue }
+            kept[move.window.windowID] = frame.size
             let app = NSRunningApplication(processIdentifier: move.window.pid)?.localizedName ?? "?"
-            log.notice("\(app, privacy: .public) kept \(frame.debugDescription, privacy: .public) instead of \(move.frame.debugDescription, privacy: .public); it likely has a minimum size")
+            log.notice("\(app, privacy: .public) kept \(frame.debugDescription, privacy: .public) instead of \(move.frame.debugDescription, privacy: .public)")
         }
+        await MainActor.run { MinimumSizes.record(moves, kept: kept) }
     }
 
     func pruneClosedWindows() {
-        settings.library.prune(keeping: WindowList.allIDs())
+        let alive = WindowList.allIDs()
+        settings.library.prune(keeping: alive)
+        MinimumSizes.prune(keeping: alive)
     }
 
     static func icon(_ pid: pid_t) -> NSImage? {

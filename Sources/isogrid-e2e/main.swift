@@ -302,6 +302,29 @@ if let dragLeft, let edge = bounds(dragLeft)?.maxX {
 check(zip(others, othersBefore).allSatisfy { close(bounds($0), $1!) }, "the other set's windows still weren't touched")
 check(leftoverPanels() == 0, "no panel left after gap drags")
 
+print("A gap drag stops where a window can't shrink any further")
+send("tile", ["layout": "1x2", "pids": [Int(d)]])
+spin(timeout: 0.4)
+let halves = TileLayout(rows: 1, columns: 2)!.cellFrames(in: area, gap: 8)
+let narrowest = halves[1].width - 60
+let rightIndex = (bounds(window("D", 0))?.minX ?? 0) > (bounds(window("D", 1))?.minX ?? 0) ? 0 : 1
+let (leftID, rightID) = (window("D", 1 - rightIndex), window("D", rightIndex))
+fixture("D", "minimum", ["index": rightIndex, "size": [Double(narrowest), 100]])
+focus(leftID, d)
+spin(timeout: 0.9)
+// The first drag finds the minimum when the window refuses it; the second already knows it.
+for attempt in ["the first drag", "a second drag"] {
+    guard let left = bounds(leftID), let right = bounds(rightID) else { break }
+    let x = Double((left.maxX + right.minX) / 2)
+    send("gap", ["points": [x, Double(left.midY), x + 200, Double(left.midY)]])
+    spin(timeout: 0.4)
+    let width = bounds(rightID)?.width ?? 0
+    let space = (bounds(rightID)?.minX ?? 0) - (bounds(leftID)?.maxX ?? 0)
+    check(abs(width - narrowest) <= 2, "\(attempt) stops at the window's minimum width (\(Int(width)) of \(Int(narrowest)))")
+    check(abs(space - 8) <= 2, "\(attempt) leaves one gap between the two windows (\(Int(space)))")
+}
+check(leftoverPanels() == 0, "no panel left after stopping at a minimum")
+
 // MARK: Teardown
 
 send("quit", timeout: 2)
