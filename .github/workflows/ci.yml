@@ -31,4 +31,11 @@ jobs:
           allow "$PWD/build/Isogrid.app/Contents/MacOS/Isogrid" 1
           sudo launchctl stop com.apple.tccd || true
           sleep 2
+      # The runner's Dock is full, so every app the test opens shrinks its icons and moves the
+      # bottom of the usable screen mid-test. Hidden, it leaves the screen alone.
+      - name: Hide the Dock
+        run: |
+          defaults write com.apple.dock autohide -bool true
+          killall Dock
+          sleep 2
       - run: scripts/e2e.sh
