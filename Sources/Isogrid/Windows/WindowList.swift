@@ -26,8 +26,9 @@ nonisolated enum WindowList {
     }
 
     /// Activation reorders windows a moment after the app becomes active; anything raised
-    /// before that lands below whatever was in front. Waits until `id` is the front window.
-    static func waitUntilFront(_ id: CGWindowID, timeout: Duration = .milliseconds(500)) async {
+    /// before that lands below whatever was in front. Waits until `id` is the front window,
+    /// which can take over half a second on a busy machine.
+    static func waitUntilFront(_ id: CGWindowID, timeout: Duration = .milliseconds(1500)) async {
         let clock = ContinuousClock()
         let end = clock.now + timeout
         while clock.now < end, onScreen().first?.id != id {
