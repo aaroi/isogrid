@@ -10,16 +10,18 @@ final class E2EServer {
     static let isEnabled = CommandLine.arguments.contains("--e2e")
 
     private let tiler: Tiler
+    private let picker: PickerController
     private let overview: OverviewController
     private let overlay: Overlay
     private let gaps: GapController
     private let center = DistributedNotificationCenter.default()
 
-    init(tiler: Tiler, overview: OverviewController, overlay: Overlay, gaps: GapController) {
-        self.gaps = gaps
+    init(tiler: Tiler, picker: PickerController, overview: OverviewController, overlay: Overlay, gaps: GapController) {
         self.tiler = tiler
+        self.picker = picker
         self.overview = overview
         self.overlay = overlay
+        self.gaps = gaps
     }
 
     func start() {
@@ -38,7 +40,7 @@ final class E2EServer {
                 self.run(command, id: id, pids: pids, layout: layout, slot: slot, window: window, pid: pid, points: points, line: line)
             }
         }
-        reply(id: "ready", ok: true)
+        reply(id: "ready", ok: AXWindow.isTrusted, detail: AXWindow.isTrusted ? "" : "no Accessibility access")
     }
 
     private func run(_ command: String, id: String, pids: [pid_t], layout: String?, slot: Int?, window: CGWindowID?, pid: pid_t?,
@@ -60,12 +62,15 @@ final class E2EServer {
                     return reply(id: id, ok: false, detail: "window not found")
                 }
                 target.focus()
+            case "picker":
+                picker.open()
             case "overview":
                 overview.open()
             case "pick":
                 overview.pick(slot ?? 1)
                 await tiler.idle()
             case "dismiss":
+                picker.close()
                 overview.close()
             case "drop":
                 // A modifier-drag drop without the mouse, using the same survey and swap as a real drop.

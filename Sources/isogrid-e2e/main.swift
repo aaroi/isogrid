@@ -127,6 +127,12 @@ guard spin(timeout: 15, until: { fixtures.count == 4 && replies["ready"] != nil 
     fixtureProcesses.forEach { $0.terminate() }
     exit(1)
 }
+guard replies["ready"]?["ok"] as? Bool == true else {
+    print("  ✘ Isogrid can't move windows. Turn it on in System Settings > Privacy & Security > Accessibility.")
+    send("quit", timeout: 2)
+    fixtureProcesses.forEach { $0.terminate() }
+    exit(1)
+}
 let a = fixtures["A"]!.pid, b = fixtures["B"]!.pid, c = fixtures["C"]!.pid
 let members = [window("A", 0), window("A", 1), window("A", 2), window("B", 0)]
 let cover = window("C", 0)
@@ -227,6 +233,14 @@ let frontIsMember = [window("A", 0), window("A", 1), window("B", 0)].contains(st
 if !frontIsMember { dumpOrder() }
 check(frontIsMember, "a member of the set is the front window")
 check(leftoverPanels() == 0, "no panel left after recall")
+
+print("Picker opens and always goes away")
+send("picker")
+spin(timeout: 0.3)
+check(leftoverPanels() == 1, "the picker's grid preview is on screen")
+send("dismiss")
+spin(timeout: 0.5)
+check(leftoverPanels() == 0, "dismissing the picker removes its preview")
 
 print("Overview opens and always goes away")
 send("overview")
