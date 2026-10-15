@@ -92,6 +92,12 @@ func leftoverPanels() -> Int {
     }.count
 }
 
+/// Waits up to two seconds for exactly `count` full-screen panels, since panels fade before
+/// they go.
+func panels(_ count: Int) -> Bool {
+    spin(timeout: 2, until: { leftoverPanels() == count })
+}
+
 func dumpOrder() {
     let names = Dictionary(uniqueKeysWithValues: fixtures.flatMap { name, value in value.windows.enumerated().map { ($1, "\(name)\($0)") } })
     print("    order: " + stack().prefix(8).map { names[$0.id] ?? $0.owner }.joined(separator: " > "))
@@ -100,6 +106,17 @@ func dumpOrder() {
 func close(_ a: CGRect?, _ b: CGRect) -> Bool {
     guard let a else { return false }
     return abs(a.minX - b.minX) <= 2 && abs(a.minY - b.minY) <= 2 && abs(a.width - b.width) <= 2 && abs(a.height - b.height) <= 2
+}
+
+/// Waits for each window to sit in its frame, for up to a few seconds because a busy machine
+/// can be slow to move and unminimize them, and says where any that didn't are.
+@discardableResult
+func settled(_ placements: [(id: CGWindowID, frame: CGRect)]) -> Bool {
+    if spin(timeout: 3, until: { placements.allSatisfy { close(bounds($0.id), $0.frame) } }) { return true }
+    for (id, frame) in placements where !close(bounds(id), frame) {
+        print("    window \(id) is at \(bounds(id).map { "\($0)" } ?? "nowhere") instead of \(frame)")
+    }
+    return false
 }
 
 func launch(_ path: String, _ arguments: [String]) -> Process {
@@ -141,14 +158,12 @@ func focus(_ id: CGWindowID, _ pid: pid_t) {
     send("focus", ["window": Int(id), "pid": Int(pid)])
 }
 
+/// Waits up to two seconds for every window in `ids` to be above the cover, since raises land a
+/// moment apart, and shows the order if they never are.
 func membersAboveCover(_ ids: [CGWindowID]) -> Bool {
-    let coverIndex = index(cover)
-    let ok = ids.allSatisfy { index($0) < coverIndex }
-    if !ok {
-        let names = Dictionary(uniqueKeysWithValues: fixtures.flatMap { name, value in value.windows.enumerated().map { ($1, "\(name)\($0)") } })
-        print("    order: " + stack().prefix(8).map { names[$0.id] ?? $0.owner }.joined(separator: " > "))
-    }
-    return ok
+    if spin(timeout: 2, until: { ids.allSatisfy { index($0) < index(cover) } }) { return true }
+    dumpOrder()
+    return false
 }
 
 // MARK: Tests
@@ -158,22 +173,21 @@ send("tile", ["layout": "2x2", "pids": [Int(a), Int(b)]])
 spin(timeout: 0.4)
 let landed = members.map { id in cells.firstIndex { close(bounds(id), $0) } }
 check(landed.allSatisfy { $0 != nil } && Set(landed.compactMap { $0 }).count == 4, "every window fills its own cell \(landed)")
-check(leftoverPanels() == 0, "no panel left after tiling")
+check(panels(0), "no panel left after tiling")
 let sets = send("sets")?["detail"] as? String ?? ""
 check(sets.hasPrefix("1:") && members.allSatisfy { sets.contains(String($0)) }, "the tiled windows form set 1 (\(sets))")
 
 print("Dropping a window on an occupied cell swaps the two")
 if let from = landed[0], let to = landed[3] {
     send("drop", ["window": Int(window("A", 0)), "slot": to])
-    spin(timeout: 0.4)
+    settled([(window("A", 0), cells[to]), (window("B", 0), cells[from])])
     check(close(bounds(window("A", 0)), cells[to]), "the dropped window takes the target cell")
     check(close(bounds(window("B", 0)), cells[from]), "the window that was there moves to the dropped window's old cell")
     let after = members.map { id in cells.firstIndex { close(bounds(id), $0) } }
     check(Set(after.compactMap { $0 }).count == 4, "no cell is left empty \(after)")
     // Swap back so the rest of the test sees the original layout.
     send("drop", ["window": Int(window("A", 0)), "slot": from])
-    spin(timeout: 0.4)
-    check(close(bounds(window("A", 0)), cells[from]) && close(bounds(window("B", 0)), cells[to]), "swapping back restores both")
+    check(settled([(window("A", 0), cells[from]), (window("B", 0), cells[to])]), "swapping back restores both")
 }
 
 print("Focusing a member brings the whole set forward")
@@ -224,7 +238,7 @@ spin(timeout: 1.2)
 focus(cover, c)
 spin(timeout: 0.5)
 send("recall", ["slot": 1])
-spin(timeout: 0.6)
+settled([(window("A", 1), cells[landed[1] ?? 0]), (window("B", 0), cells[landed[3] ?? 0])])
 check(close(bounds(window("A", 1)), cells[landed[1] ?? 0]), "the minimized member is back in its cell")
 check(close(bounds(window("B", 0)), cells[landed[3] ?? 0]), "the moved member is back in its cell")
 check(!isOnScreen(window("A", 2)), "the closed member isn't revived")
@@ -232,30 +246,30 @@ check(membersAboveCover([window("A", 0), window("A", 1), window("B", 0)]), "the 
 let frontIsMember = [window("A", 0), window("A", 1), window("B", 0)].contains(stack().first?.id ?? 0)
 if !frontIsMember { dumpOrder() }
 check(frontIsMember, "a member of the set is the front window")
-check(leftoverPanels() == 0, "no panel left after recall")
+check(panels(0), "no panel left after recall")
 
 print("Picker opens and always goes away")
-send("picker")
-spin(timeout: 0.3)
-check(leftoverPanels() == 1, "the picker's grid preview is on screen")
-send("dismiss")
+// From a settled focus: the picker rightly closes when another app takes focus from it.
+focus(cover, c)
 spin(timeout: 0.5)
-check(leftoverPanels() == 0, "dismissing the picker removes its preview")
+send("picker")
+check(panels(1), "the picker's grid preview is on screen")
+send("dismiss")
+check(panels(0), "dismissing the picker removes its preview")
+// Focus returns to the previous window a moment after the picker closes.
+spin(timeout: 0.5)
 
 print("Overview opens and always goes away")
 send("overview")
-spin(timeout: 0.4)
-check(leftoverPanels() == 1, "the overview is on screen")
+check(panels(1), "the overview is on screen")
 send("dismiss")
-spin(timeout: 0.5)
-check(leftoverPanels() == 0, "dismissing removes it")
+check(panels(0), "dismissing removes it")
 focus(cover, c)
 spin(timeout: 0.5)
 send("overview")
 spin(timeout: 0.4)
 send("pick", ["slot": 1])
-spin(timeout: 0.7)
-check(leftoverPanels() == 0, "picking a set removes it")
+check(panels(0), "picking a set removes it")
 check(membersAboveCover([window("A", 0), window("A", 1), window("B", 0)]), "picking brings the set forward")
 
 print("A gap drag uses the grid of the set you're in, and snaps into line")
@@ -300,7 +314,7 @@ if let dragLeft, let edge = bounds(dragLeft)?.maxX {
     else if let snapRight { check(abs((bounds(snapRight)?.minX ?? 0) - (edge + 8)) <= 1, "the other row's gap snapped into line with the dragged one") }
 }
 check(zip(others, othersBefore).allSatisfy { close(bounds($0), $1!) }, "the other set's windows still weren't touched")
-check(leftoverPanels() == 0, "no panel left after gap drags")
+check(panels(0), "no panel left after gap drags")
 
 print("A gap drag stops where a window can't shrink any further")
 send("tile", ["layout": "1x2", "pids": [Int(d)]])
@@ -324,7 +338,7 @@ for attempt in ["the first drag", "a second drag"] {
     check(detail == "", "\(attempt) stops while dragging, so nothing moves back on release")
     check(abs(space - 8) <= 2, "\(attempt) leaves one gap between the two windows (\(Int(space)))")
 }
-check(leftoverPanels() == 0, "no panel left after stopping at a minimum")
+check(panels(0), "no panel left after stopping at a minimum")
 
 print("A window that sizes in whole steps isn't mistaken for one at its minimum")
 fixture("D", "steps", ["index": 1 - rightIndex, "size": [23, 23]])
