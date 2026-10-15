@@ -111,17 +111,6 @@ public struct SetLibrary: Codable, Hashable, Sendable {
         sets[index].grid = grid
     }
 
-    /// Gives each window to its most recently used set, for libraries saved before a window
-    /// could only belong to one.
-    public mutating func makeExclusive() {
-        var claimed = Set<UInt32>()
-        for set in sets.sorted(by: { $0.lastUsed > $1.lastUsed }) {
-            guard let index = sets.firstIndex(where: { $0.id == set.id }) else { continue }
-            sets[index].members.removeAll { !claimed.insert($0.windowID).inserted }
-        }
-        sets.removeAll { $0.members.isEmpty }
-    }
-
     public mutating func remove(windowIDs: Set<UInt32>) {
         prune(keeping: Set(sets.flatMap { $0.members.map(\.windowID) }).subtracting(windowIDs))
     }

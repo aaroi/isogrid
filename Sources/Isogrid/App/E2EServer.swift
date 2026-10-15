@@ -10,16 +10,18 @@ final class E2EServer {
     static let isEnabled = CommandLine.arguments.contains("--e2e")
 
     private let tiler: Tiler
+    private let picker: PickerController
     private let overview: OverviewController
     private let overlay: Overlay
     private let gaps: GapController
     private let center = DistributedNotificationCenter.default()
 
-    init(tiler: Tiler, overview: OverviewController, overlay: Overlay, gaps: GapController) {
-        self.gaps = gaps
+    init(tiler: Tiler, picker: PickerController, overview: OverviewController, overlay: Overlay, gaps: GapController) {
         self.tiler = tiler
+        self.picker = picker
         self.overview = overview
         self.overlay = overlay
+        self.gaps = gaps
     }
 
     func start() {
@@ -38,7 +40,7 @@ final class E2EServer {
                 self.run(command, id: id, pids: pids, layout: layout, slot: slot, window: window, pid: pid, points: points, line: line)
             }
         }
-        reply(id: "ready", ok: true)
+        reply(id: "ready", ok: AXWindow.isTrusted, detail: AXWindow.isTrusted ? "" : "no Accessibility access")
     }
 
     private func run(_ command: String, id: String, pids: [pid_t], layout: String?, slot: Int?, window: CGWindowID?, pid: pid_t?,
@@ -60,12 +62,15 @@ final class E2EServer {
                     return reply(id: id, ok: false, detail: "window not found")
                 }
                 target.focus()
+            case "picker":
+                picker.open()
             case "overview":
                 overview.open()
             case "pick":
                 overview.pick(slot ?? 1)
                 await tiler.idle()
             case "dismiss":
+                picker.close()
                 overview.close()
             case "drop":
                 // A modifier-drag drop without the mouse, using the same survey and swap as a real drop.
@@ -79,10 +84,14 @@ final class E2EServer {
                                         overlay: overlay) { continuation.resume() }
                 }
             case "gap":
-                // A gap drag from (x0, y0) to (x1, y1), without the mouse.
+                // A gap drag from (x0, y0) to (x1, y1), without the mouse. The detail says whether
+                // the gap had to move back after release.
                 guard points.count == 4 else { return reply(id: id, ok: false, detail: "need 4 coordinates") }
-                let started = await gaps.simulate(from: CGPoint(x: points[0], y: points[1]), to: CGPoint(x: points[2], y: points[3]), line: line)
-                guard started else { return reply(id: id, ok: false, detail: "no live gap there") }
+                let from = CGPoint(x: points[0], y: points[1]), to = CGPoint(x: points[2], y: points[3])
+                guard let movedBack = await gaps.simulate(from: from, to: to, line: line) else {
+                    return reply(id: id, ok: false, detail: "no live gap there")
+                }
+                return reply(id: id, ok: true, detail: movedBack ? "moved back" : "")
             case "sets":
                 let sets = Settings.shared.library.sets.sorted { $0.slot < $1.slot }
                     .map { "\($0.slot):" + $0.members.map { String($0.windowID) }.joined(separator: ",") }

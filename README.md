@@ -1,6 +1,36 @@
+<p align="center">
+  <img src=".github/icon.png" width="160" alt="Isogrid icon" />
+</p>
+
 # Isogrid
 
-A macOS menu bar app that keeps many windows visible at once in a grid. Built for running several Claude Code windows, terminals and browsers side by side.
+**A grid window manager for macOS, built for running many coding agents side by side.**
+
+A menu bar app that keeps many windows visible at once: Claude Code windows, terminals and browsers in one grid. Tile with a keystroke, drop windows into cells, resize neighbours by dragging the gap between them, and bring a whole set back with one shortcut. No cloud, no telemetry, no AI (despite the hat).
+
+Built on AppKit, SwiftUI and the Accessibility API. The app is about 2.4 MB.
+
+![Six windows tiled in a 2×3 grid, with the layout picker open](.github/screenshot.png)
+
+---
+
+## Install
+
+Requires macOS 15 or later and Swift 6.2, from Xcode 26 or just its Command Line Tools (`xcode-select --install`).
+
+```sh
+git clone https://github.com/aaroi/isogrid.git
+cd isogrid
+scripts/install.sh
+```
+
+The script builds Isogrid, copies it to `/Applications` and opens it. Run it again to update.
+
+On first launch macOS asks for **Accessibility** access, which Isogrid needs to move windows. Turn it on in System Settings › Privacy & Security › Accessibility. This is the only step an agent can't do for you.
+
+macOS ties that grant to the app's code signature, so the script also creates a self-signed "Isogrid Local Signing" identity, in a keychain of its own, and signs every build with it. Updates then keep the grant instead of asking again. If Isogrid is switched on but can't move windows, its entry belongs to an earlier signature: remove it with −, add `/Applications/Isogrid.app` again with +, and switch it on.
+
+**Screen Recording** is optional and only adds live previews to the overview.
 
 ## Shortcuts
 
@@ -22,57 +52,57 @@ A macOS menu bar app that keeps many windows visible at once in a grid. Built fo
 ## Details
 
 - Applying a layout moves each window to the free cell nearest to it, so applying it twice moves nothing.
-- Dragged gaps snap to other edges and even splits within 12 pt.
+- Dragged gaps snap to other edges and even splits within 12 pt, and stop where a window can't get any narrower or shorter.
 - Grids, sets and spacing are saved per display, and survive a monitor reconnecting under a new ID.
-- The menu bar icon draws the current layout. Its menu sets the drag modifier and window spacing.
+- The menu bar icon draws the current layout. Its menu sets the drag modifier, window spacing and Open at Login.
 
-Automate it with the `isogrid://` scheme:
+## Automate
 
-```
-open isogrid://layout/2x4   # set a layout and tile
+Isogrid answers `isogrid://` URLs, for Raycast, Shortcuts or a shell:
+
+```sh
+open isogrid://layout/2x4   # set a layout and tile the display under the pointer
 open isogrid://tile         # tile again
 open isogrid://set/1        # bring set 1 forward
+open isogrid://picker
 open isogrid://overview
 open isogrid://dismiss      # close the picker or overview
 ```
 
-## Build
+## Uninstall
 
-Requires macOS 15+ on Apple silicon and Swift 6.2 (Xcode 26 or its Command Line Tools).
-
-```
-scripts/make-signing-identity.sh   # run once
-scripts/build.sh                   # writes build/Isogrid.app
-open build/Isogrid.app
-```
-
-- **Accessibility** is required to move windows. macOS ties the grant to the code signature, so the build signs with a stable local identity to keep it across rebuilds.
-- **Screen Recording** is optional and only adds live previews to the overview.
-
-## Test
-
-```
-scripts/test.sh   # unit tests
-scripts/e2e.sh    # end-to-end against real windows, about 20 s
+```sh
+pkill -x Isogrid; rm -rf /Applications/Isogrid.app
+defaults delete dev.isogrid.Isogrid
+tccutil reset All dev.isogrid.Isogrid
+security delete-keychain ~/Library/Keychains/isogrid.keychain-db
 ```
 
-The end-to-end test opens throwaway windows and drives a separate headless instance with its own settings, so your windows and sets are untouched. Leave the Mac alone while it runs.
+## Develop
 
-## Structure
+```sh
+scripts/build.sh   # writes build/Isogrid.app
+scripts/test.sh    # unit tests
+scripts/e2e.sh     # end-to-end against real windows, about 30 s
+```
+
+CI runs both on a hosted macOS runner for every pull request. Locally, the end-to-end test needs the Accessibility grant. It opens throwaway windows and drives a separate headless instance with its own settings, so your windows and sets are untouched. Leave the Mac alone while it runs.
 
 | Path | Contents |
 | --- | --- |
-| `Sources/IsogridCore` | Grid geometry, gap dragging, snapping, swaps and the set library. No AppKit, fully unit tested. |
+| `Sources/IsogridCore` | Grid geometry, gap dragging, snapping, swaps, minimum sizes and the set library. No AppKit, fully unit tested. |
 | `Sources/Isogrid/Windows` | Reading windows (`CGWindowList`) and moving them (Accessibility, off the main thread). |
 | `Sources/Isogrid/Interaction` | Shortcuts, modifier drag, gap drag and group focus. |
 | `Sources/Isogrid/Interface` | Overlay, picker, overview and menu. |
 | `Sources/Isogrid/App` | Entry point, settings, tiling and the end-to-end test channel. |
+| `Sources/isogrid-e2e`, `Sources/IsogridFixture` | The end-to-end test and the windows it drives. |
 
-## Design notes
+### Design notes
 
 Each of these came from a failure in real use:
 
 - Moves are rechecked after 80 and 220 ms, because some apps apply a resize late.
+- macOS doesn't tell other apps how small a window can get. While a gap moves, each window it shrinks is resized under its stand-in, and the gap stops where a window stops. Landing within 12 pt counts as rounding, since terminals size to whole characters.
 - Group focus only acts on focus that reads the same twice, 80 ms apart. Apps briefly report a stale window while you switch.
 - The window that just lost focus is never raised, so closing one with ⌘W doesn't bring it back.
 - Other apps' windows are raised without activating those apps, which avoids flicker.

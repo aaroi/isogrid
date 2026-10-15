@@ -93,7 +93,11 @@ final class StatusItem: NSObject, NSMenuDelegate {
         }
         let login = NSMenuItem("Open at Login") {
             let service = SMAppService.mainApp
-            try? service.status == .enabled ? service.unregister() : service.register()
+            do {
+                try service.status == .enabled ? service.unregister() : service.register()
+            } catch {
+                log.error("could not change Open at Login: \(error.localizedDescription, privacy: .public)")
+            }
         }
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)

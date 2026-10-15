@@ -30,8 +30,14 @@ final class GapController {
         let grabOffset: CGFloat
         /// Every tiled window the line could move; a pair drag uses two of them.
         let windows: [(window: AXWindow, cell: Int)]
+        /// The size each window was last given or kept, to tell when the drag shrinks it further.
+        var sizes: [CGWindowID: CGSize]
         var grid: TileGrid
         var divider: TileGrid.Divider
+        var scope: TileGrid.Scope
+        var pointer: CGPoint
+        /// Where the pointer asks the gap's centre to be.
+        var position: CGFloat
         var snapped = false
     }
 
@@ -43,6 +49,8 @@ final class GapController {
     private var tap: CFMachPort?
     private var hover: Hover?
     private var session: Session?
+    /// Windows being resized under their stand-ins to find where they stop.
+    private var probes: [CGWindowID: Task<Void, Never>] = [:]
 
     init(overlay: Overlay) {
         self.overlay = overlay
@@ -93,14 +101,16 @@ final class GapController {
         }
     }
 
-    /// A whole gap drag without the mouse, for the end-to-end test.
-    func simulate(from start: CGPoint, to end: CGPoint, line: Bool) async -> Bool {
+    /// A whole gap drag without the mouse, for the end-to-end test. Returns nil when there's no
+    /// live gap at `start`, otherwise whether the gap had to move back after release.
+    func simulate(from start: CGPoint, to end: CGPoint, line: Bool) async -> Bool? {
         let scope: TileGrid.Scope = line ? .line : .pair
         updateHover(at: start, scope: scope, force: true)
-        guard begin(at: start, scope: scope) else { return false }
+        guard begin(at: start, scope: scope) else { return nil }
         drag(to: end, scope: scope)
-        await self.end()?.value
-        return true
+        // Held at the end, as a hand would, until every window the drag shrank has answered.
+        while let probe = probes.values.first { await probe.value }
+        return await self.end()?.value
     }
 
     // MARK: Hover
@@ -168,13 +178,18 @@ final class GapController {
               let line = grid.divider(at: point, in: context.area, gap: settings.gap, scope: .line) else { return false }
 
         var resolver = AXWindow.Resolver()
-        let windows: [(window: AXWindow, cell: Int)] = tiledWindows(in: grid.cells(beside: line), of: context, onScreen: WindowList.onScreen())
-            .compactMap { item in resolver.window(item.info.id, pid: item.info.pid).map { ($0, item.cell) } }
+        let tiled = tiledWindows(in: grid.cells(beside: line), of: context, onScreen: WindowList.onScreen())
+        let windows: [(window: AXWindow, cell: Int)] = tiled.compactMap { item in
+            resolver.window(item.info.id, pid: item.info.pid).map { ($0, item.cell) }
+        }
         guard !windows.isEmpty else { return false }
 
         let gapFrame = grid.frame(of: divider, in: context.area, gap: settings.gap)
-        let grabOffset = divider.axis == .vertical ? point.x - gapFrame.midX : point.y - gapFrame.midY
-        let session = Session(context: context, start: point, grabOffset: grabOffset, windows: windows, grid: grid, divider: divider)
+        let center = divider.axis == .vertical ? gapFrame.midX : gapFrame.midY
+        let grabOffset = (divider.axis == .vertical ? point.x : point.y) - center
+        let sizes = Dictionary(tiled.map { ($0.info.id, $0.info.bounds.size) }, uniquingKeysWith: { first, _ in first })
+        let session = Session(context: context, start: point, grabOffset: grabOffset, windows: windows, sizes: sizes,
+                              grid: grid, divider: divider, scope: scope, pointer: point, position: center)
         self.session = session
         overlay.beginResize(standIns(for: session), on: context.screen)
         overlay.showHandle(grid.frame(of: divider, in: context.area, gap: settings.gap, minimumThickness: 8),
@@ -190,13 +205,17 @@ final class GapController {
         guard let divider = context.grid.divider(at: session.start, in: context.area, gap: settings.gap, scope: scope) else { return }
         let position = (divider.axis == .vertical ? point.x : point.y) - session.grabOffset
         var grid = context.grid
-        let snapped = grid.move(divider, to: position, in: context.area, gap: settings.gap, snap: Self.snapDistance)
+        let snapped = grid.move(divider, to: position, in: context.area, gap: settings.gap,
+                                minimums: Self.minimums(of: session.windows), snap: Self.snapDistance)
         if snapped, !session.snapped {
             // The same alignment tick macOS gives when objects line up in Keynote or Freeform.
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
         session.grid = grid
         session.divider = divider
+        session.scope = scope
+        session.pointer = point
+        session.position = position
         session.snapped = snapped
         self.session = session
 
@@ -211,34 +230,104 @@ final class GapController {
         } else {
             overlay.hideGuide()
         }
+        probe(session)
     }
 
+    /// Returns whether the gap had to move back after release, for a window that stopped
+    /// short after the pointer let go.
     @discardableResult
-    private func end() -> Task<Void, Never>? {
+    private func end() -> Task<Bool, Never>? {
         guard let session else { return nil }
         self.session = nil
         hover = nil
         overlay.hideGuide()
-        let context = session.context
-        settings.setGrid(session.grid, for: context.screen)
-        if let id = context.setID {
+        save(session)
+        let known = Self.minimums(of: session.windows)
+        let answering = Array(probes.values)
+        return Task {
+            for probe in answering { await probe.value }
+            await Tiler.perform(moves(for: session))
+            let minimums = Self.minimums(of: session.windows)
+            guard minimums != known else {
+                overlay.endResize()
+                return false
+            }
+            var fitted = session
+            fitted.grid = session.context.grid
+            fitted.grid.move(session.divider, to: session.position, in: session.context.area, gap: settings.gap,
+                             minimums: minimums, snap: Self.snapDistance)
+            save(fitted)
+            let gapFrame = fitted.grid.frame(of: fitted.divider, in: fitted.context.area, gap: settings.gap, minimumThickness: 8)
+            overlay.updateResize(standIns(for: fitted), handle: gapFrame, spansLine: fitted.scope == .line, on: fitted.context.screen)
+            await Tiler.perform(moves(for: fitted))
+            overlay.endResize()
+            return true
+        }
+    }
+
+    // MARK: Minimum sizes
+
+    /// macOS doesn't tell other apps how small a window can get. So each window the drag
+    /// shrinks further than before is resized under its stand-in, and when one stops short, the
+    /// gap stops there too.
+    private func probe(_ session: Session) {
+        let vertical = session.divider.axis == .vertical
+        for move in moves(for: session) {
+            let id = move.window.windowID
+            guard probes[id] == nil, let size = session.sizes[id],
+                  vertical ? move.frame.width < size.width - 1 : move.frame.height < size.height - 1 else { continue }
+            self.session?.sizes[id] = move.frame.size
+            let known = MinimumSizes[id]
+            probes[id] = Task {
+                let kept = await Self.resize(move)
+                probes[id] = nil
+                MinimumSizes.record(move, kept: kept)
+                self.session?.sizes[id] = kept
+                if MinimumSizes[id] != known, let current = self.session {
+                    drag(to: current.pointer, scope: current.scope)
+                }
+            }
+        }
+    }
+
+    /// Gives a window its new size, keeping its origin so that one that stops short still sits
+    /// inside the space it had, and returns the size it settles on.
+    @concurrent nonisolated private static func resize(_ move: Tiler.Move) async -> CGSize {
+        guard let before = move.window.frame else { return move.frame.size }
+        move.window.setFrame(CGRect(origin: before.origin, size: move.frame.size))
+        var size = move.window.frame?.size ?? move.frame.size
+        if size == before.size {
+            // Some apps answer a beat later.
+            try? await Task.sleep(for: .milliseconds(150))
+            size = move.window.frame?.size ?? move.frame.size
+        }
+        return size
+    }
+
+    private func save(_ session: Session) {
+        settings.setGrid(session.grid, for: session.context.screen)
+        if let id = session.context.setID {
             settings.library.updateGrid(session.grid, ofSet: id)
             settings.library.touch(id, at: .now)
         }
-        let cells = session.grid.cellFrames(in: context.area, gap: settings.gap)
+    }
+
+    /// The windows the current scope resizes, with their new frames.
+    private func moves(for session: Session) -> [Tiler.Move] {
+        let cells = session.grid.cellFrames(in: session.context.area, gap: settings.gap)
         let moving = Set(session.grid.cells(beside: session.divider))
-        let moves = session.windows.filter { moving.contains($0.cell) }.map { Tiler.Move(window: $0.window, frame: cells[$0.cell]) }
-        return Task {
-            await Tiler.perform(moves)
-            overlay.endResize()
-        }
+        return session.windows.filter { moving.contains($0.cell) }.map { Tiler.Move(window: $0.window, frame: cells[$0.cell]) }
     }
 
     /// Frosted stand-ins for the windows the current scope resizes.
     private func standIns(for session: Session) -> [(frame: CGRect, icon: NSImage?)] {
-        let cells = session.grid.cellFrames(in: session.context.area, gap: settings.gap)
-        let moving = Set(session.grid.cells(beside: session.divider))
-        return session.windows.filter { moving.contains($0.cell) }.map { (cells[$0.cell], Tiler.icon($0.window.pid)) }
+        moves(for: session).map { ($0.frame, Tiler.icon($0.window.pid)) }
+    }
+
+    /// The smallest size each cell's window accepts, where it is known.
+    private static func minimums(of windows: [(window: AXWindow, cell: Int)]) -> [Int: CGSize] {
+        Dictionary(windows.compactMap { item in MinimumSizes[item.window.windowID].map { (item.cell, $0) } },
+                   uniquingKeysWith: { first, _ in first })
     }
 
     // MARK: Windows

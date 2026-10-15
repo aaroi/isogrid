@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if E2EServer.isEnabled {
             // A second, headless instance driven by scripts/e2e.sh. It has no menu icon, shortcuts
             // or drag handling, so it can't interfere with the Isogrid you're using.
-            e2e = E2EServer(tiler: tiler, overview: overview, overlay: overlay, gaps: gaps)
+            e2e = E2EServer(tiler: tiler, picker: picker, overview: overview, overlay: overlay, gaps: gaps)
             e2e?.start()
             return
         }
