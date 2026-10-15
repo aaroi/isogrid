@@ -83,14 +83,14 @@ security delete-keychain ~/Library/Keychains/isogrid.keychain-db
 ```sh
 scripts/build.sh   # writes build/Isogrid.app
 scripts/test.sh    # unit tests
-scripts/e2e.sh     # end-to-end against real windows, about 20 s
+scripts/e2e.sh     # end-to-end against real windows, about 30 s
 ```
 
 The end-to-end test needs the Accessibility grant. It opens throwaway windows and drives a separate headless instance with its own settings, so your windows and sets are untouched. Leave the Mac alone while it runs.
 
 | Path | Contents |
 | --- | --- |
-| `Sources/IsogridCore` | Grid geometry, gap dragging, snapping, swaps and the set library. No AppKit, fully unit tested. |
+| `Sources/IsogridCore` | Grid geometry, gap dragging, snapping, swaps, minimum sizes and the set library. No AppKit, fully unit tested. |
 | `Sources/Isogrid/Windows` | Reading windows (`CGWindowList`) and moving them (Accessibility, off the main thread). |
 | `Sources/Isogrid/Interaction` | Shortcuts, modifier drag, gap drag and group focus. |
 | `Sources/Isogrid/Interface` | Overlay, picker, overview and menu. |
@@ -102,7 +102,7 @@ The end-to-end test needs the Accessibility grant. It opens throwaway windows an
 Each of these came from a failure in real use:
 
 - Moves are rechecked after 80 and 220 ms, because some apps apply a resize late.
-- macOS doesn't tell other apps how small a window can get. Isogrid learns it the first time a window refuses to shrink, moves the gap back to where it fits, and stops later drags there.
+- macOS doesn't tell other apps how small a window can get. While a gap moves, each window it shrinks is resized under its stand-in, and the gap stops where a window stops. Landing within 12 pt counts as rounding, since terminals size to whole characters.
 - Group focus only acts on focus that reads the same twice, 80 ms apart. Apps briefly report a stale window while you switch.
 - The window that just lost focus is never raised, so closing one with ⌘W doesn't bring it back.
 - Other apps' windows are raised without activating those apps, which avoids flicker.

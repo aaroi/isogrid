@@ -312,18 +312,30 @@ let (leftID, rightID) = (window("D", 1 - rightIndex), window("D", rightIndex))
 fixture("D", "minimum", ["index": rightIndex, "size": [Double(narrowest), 100]])
 focus(leftID, d)
 spin(timeout: 0.9)
-// The first drag finds the minimum when the window refuses it; the second already knows it.
+// The first drag finds the minimum as the window stops short; the second already knows it.
 for attempt in ["the first drag", "a second drag"] {
     guard let left = bounds(leftID), let right = bounds(rightID) else { break }
     let x = Double((left.maxX + right.minX) / 2)
-    send("gap", ["points": [x, Double(left.midY), x + 200, Double(left.midY)]])
+    let detail = send("gap", ["points": [x, Double(left.midY), x + 200, Double(left.midY)]])?["detail"] as? String
     spin(timeout: 0.4)
     let width = bounds(rightID)?.width ?? 0
     let space = (bounds(rightID)?.minX ?? 0) - (bounds(leftID)?.maxX ?? 0)
     check(abs(width - narrowest) <= 2, "\(attempt) stops at the window's minimum width (\(Int(width)) of \(Int(narrowest)))")
+    check(detail == "", "\(attempt) stops while dragging, so nothing moves back on release")
     check(abs(space - 8) <= 2, "\(attempt) leaves one gap between the two windows (\(Int(space)))")
 }
 check(leftoverPanels() == 0, "no panel left after stopping at a minimum")
+
+print("A window that sizes in whole steps isn't mistaken for one at its minimum")
+fixture("D", "steps", ["index": 1 - rightIndex, "size": [23, 23]])
+spin(timeout: 0.3)
+if let left = bounds(leftID), let right = bounds(rightID) {
+    let x = Double((left.maxX + right.minX) / 2)
+    send("gap", ["points": [x, Double(left.midY), x - 150, Double(left.midY)]])
+    spin(timeout: 0.4)
+    let width = bounds(leftID)?.width ?? 0
+    check(abs(width - (left.width - 150)) <= MinimumSize.slack, "it shrinks with the drag (\(Int(width)) for \(Int(left.width - 150)))")
+}
 
 // MARK: Teardown
 

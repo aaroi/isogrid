@@ -145,7 +145,9 @@ final class Tiler {
             let app = NSRunningApplication(processIdentifier: move.window.pid)?.localizedName ?? "?"
             log.notice("\(app, privacy: .public) kept \(frame.debugDescription, privacy: .public) instead of \(move.frame.debugDescription, privacy: .public)")
         }
-        await MainActor.run { MinimumSizes.record(moves, kept: kept) }
+        await MainActor.run {
+            for move in moves { MinimumSizes.record(move, kept: kept[move.window.windowID] ?? move.frame.size) }
+        }
     }
 
     func pruneClosedWindows() {

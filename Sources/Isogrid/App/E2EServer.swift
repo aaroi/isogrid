@@ -84,10 +84,14 @@ final class E2EServer {
                                         overlay: overlay) { continuation.resume() }
                 }
             case "gap":
-                // A gap drag from (x0, y0) to (x1, y1), without the mouse.
+                // A gap drag from (x0, y0) to (x1, y1), without the mouse. The detail says whether
+                // the gap had to move back after release.
                 guard points.count == 4 else { return reply(id: id, ok: false, detail: "need 4 coordinates") }
-                let started = await gaps.simulate(from: CGPoint(x: points[0], y: points[1]), to: CGPoint(x: points[2], y: points[3]), line: line)
-                guard started else { return reply(id: id, ok: false, detail: "no live gap there") }
+                let from = CGPoint(x: points[0], y: points[1]), to = CGPoint(x: points[2], y: points[3])
+                guard let movedBack = await gaps.simulate(from: from, to: to, line: line) else {
+                    return reply(id: id, ok: false, detail: "no live gap there")
+                }
+                return reply(id: id, ok: true, detail: movedBack ? "moved back" : "")
             case "sets":
                 let sets = Settings.shared.library.sets.sorted { $0.slot < $1.slot }
                     .map { "\($0.slot):" + $0.members.map { String($0.windowID) }.joined(separator: ",") }

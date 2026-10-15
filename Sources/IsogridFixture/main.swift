@@ -1,7 +1,8 @@
 import AppKit
 
 // Throwaway windows for the end-to-end test. Run as `IsogridFixture <name> <count>`; listens on
-// the distributed notification "dev.isogrid.fixture.<name>" for close, minimize, frame and minimum.
+// the distributed notification "dev.isogrid.fixture.<name>" for close, minimize, frame, minimum
+// and steps.
 
 let arguments = CommandLine.arguments
 let name = arguments.count > 1 ? arguments[1] : "A"
@@ -40,6 +41,9 @@ center.addObserver(forName: Notification.Name("dev.isogrid.fixture.\(name)"), ob
             window.setFrame(NSRect(x: frame[0], y: height - frame[1] - frame[3], width: frame[2], height: frame[3]), display: true)
         case "minimum" where size.count == 2:
             window.minSize = NSSize(width: size[0], height: size[1])
+        case "steps" where size.count == 2:
+            // Sizes in whole steps, the way terminals size to whole characters.
+            window.contentResizeIncrements = NSSize(width: size[0], height: size[1])
         case "quit": NSApp.terminate(nil)
         default: break
         }
