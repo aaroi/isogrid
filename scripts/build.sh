@@ -9,9 +9,10 @@ cd "${0:A:h}/.."
 swift build -c release
 app=build/Isogrid.app
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$(swift build -c release --show-bin-path)/Isogrid" "$app/Contents/MacOS/Isogrid"
 cp Support/Info.plist "$app/Contents/Info.plist"
+cp Support/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 identity=${ISOGRID_SIGN_IDENTITY:-}
 keychain=~/Library/Keychains/isogrid.keychain-db
 if [[ -z $identity && -f $keychain ]]; then
