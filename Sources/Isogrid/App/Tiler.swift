@@ -49,6 +49,8 @@ final class Tiler {
         guard !moves.isEmpty else { return }
 
         pruneClosedWindows()
+        // Saving the grid also records the display, so its sets can follow it to a new ID.
+        settings.setGrid(grid, for: screen)
         settings.library.record(grid: grid, members: members, on: screen.persistentKey, at: .now)
         run(flights, moves: moves, on: screen)
     }

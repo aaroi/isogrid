@@ -72,10 +72,8 @@ final class Settings {
         // Option-drag is taken by macOS tiling, and Control-click becomes a right-click,
         // so Shift is the default that collides with the least.
         dragModifier = defaults.string(forKey: "dragModifier").flatMap(DragModifier.init) ?? .shift
-        gap = defaults.object(forKey: "gap").map { CGFloat(($0 as? Double) ?? 8) } ?? 8
-        var library = defaults.data(forKey: "sets").flatMap { try? JSONDecoder().decode(SetLibrary.self, from: $0) } ?? SetLibrary()
-        library.makeExclusive()
-        self.library = library
+        gap = CGFloat(defaults.object(forKey: "gap") as? Double ?? 8)
+        library = defaults.data(forKey: "sets").flatMap { try? JSONDecoder().decode(SetLibrary.self, from: $0) } ?? SetLibrary()
         displays = defaults.data(forKey: "displays").flatMap { try? JSONDecoder().decode([String: DisplayInfo].self, from: $0) } ?? [:]
         grids = defaults.data(forKey: "grids").flatMap { try? JSONDecoder().decode([String: TileGrid].self, from: $0) } ?? [:]
     }
@@ -100,39 +98,21 @@ final class Settings {
     }
 
     /// macOS can give a monitor a new ID when it reconnects through another port, dock or hub.
-    /// Grids and sets saved under an ID that's no longer connected move to the connected display
-    /// with the same name and size, or, for data saved before sizes were recorded, to the
-    /// display that holds most of the set's windows.
+    /// Grids and sets saved under an ID that's no longer connected move to a connected display
+    /// with the same name and size that has nothing saved of its own.
     func reconcileDisplays() {
         let screens = NSScreen.screens
-        let connected = Set(screens.map(\.persistentKey))
-        for screen in screens where grids[screen.persistentKey] != nil {
-            if displays[screen.persistentKey] == nil { displays[screen.persistentKey] = DisplayInfo(screen) }
-        }
-        let stored = Set(grids.keys).union(library.sets.map(\.displayKey))
-        let windows = WindowList.onScreen()
-
-        for orphan in stored.subtracting(connected).sorted() {
-            let free = screens.filter { screen in
-                grids[screen.persistentKey] == nil && !library.sets.contains { $0.displayKey == screen.persistentKey }
-            }
-            let match: NSScreen?
-            if let info = displays[orphan] {
-                match = free.first { DisplayInfo($0) == info }
-            } else {
-                let members = Set(library.sets.filter { $0.displayKey == orphan }.flatMap { $0.members.map(\.windowID) })
-                let centers = windows.filter { members.contains($0.id) }.map(\.bounds.center)
-                match = free.map { screen in (screen, centers.filter { screen.axFrame.contains($0) }.count) }
-                    .filter { $0.1 > 0 }
-                    .max { $0.1 < $1.1 }?.0
-            }
-            guard let match else { continue }
+        var stored = Set(grids.keys).union(library.sets.map(\.displayKey))
+        for orphan in stored.subtracting(screens.map(\.persistentKey)).sorted() {
+            guard let info = displays[orphan],
+                  let match = screens.first(where: { !stored.contains($0.persistentKey) && DisplayInfo($0) == info }) else { continue }
             let key = match.persistentKey
             log.info("display \(orphan, privacy: .public) is now \(key, privacy: .public) (\(match.localizedName, privacy: .public))")
             if let grid = grids.removeValue(forKey: orphan) { grids[key] = grid }
             displays.removeValue(forKey: orphan)
-            displays[key] = DisplayInfo(match)
+            displays[key] = info
             library.moveDisplay(from: orphan, to: key)
+            stored.insert(key)
         }
     }
 

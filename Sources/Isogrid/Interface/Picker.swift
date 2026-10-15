@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import IsogridCore
 import SwiftUI
 
@@ -379,15 +380,15 @@ final class PickerController: NSObject, NSWindowDelegate {
 
     private func handle(_ event: NSEvent) {
         switch Int(event.keyCode) {
-        case kVK.escape: model.typedRows == nil ? close() : model.clearTyping()
-        case kVK.return, kVK.enter: model.apply()
-        case kVK.left: model.move(by: -1)
-        case kVK.right: model.move(by: 1)
-        case kVK.up: model.moveRow(by: -1)
-        case kVK.down: model.moveRow(by: 1)
-        case kVK.delete: model.clearTyping()
-        case kVK.leftBracket: adjustGap(by: -2)
-        case kVK.rightBracket: adjustGap(by: 2)
+        case kVK_Escape: model.typedRows == nil ? close() : model.clearTyping()
+        case kVK_Return, kVK_ANSI_KeypadEnter: model.apply()
+        case kVK_LeftArrow: model.move(by: -1)
+        case kVK_RightArrow: model.move(by: 1)
+        case kVK_UpArrow: model.moveRow(by: -1)
+        case kVK_DownArrow: model.moveRow(by: 1)
+        case kVK_Delete: model.clearTyping()
+        case kVK_ANSI_LeftBracket: adjustGap(by: -2)
+        case kVK_ANSI_RightBracket: adjustGap(by: 2)
         default:
             if let digit = event.charactersIgnoringModifiers?.first?.wholeNumberValue { model.type(digit) }
         }
@@ -430,17 +431,4 @@ final class PickerController: NSObject, NSWindowDelegate {
         panel.contentView = NSHostingView(rootView: PickerView(model: model))
         return panel
     }
-}
-
-private enum kVK {
-    static let `return` = 0x24
-    static let enter = 0x4C
-    static let escape = 0x35
-    static let delete = 0x33
-    static let left = 0x7B
-    static let right = 0x7C
-    static let down = 0x7D
-    static let up = 0x7E
-    static let leftBracket = 0x21
-    static let rightBracket = 0x1E
 }

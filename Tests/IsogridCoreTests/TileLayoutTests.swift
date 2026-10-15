@@ -180,11 +180,10 @@ struct TileGridTests {
         #expect(decoded == grid)
     }
 
-    @Test func readsGridsSavedWithColumnAndRowSizes() throws {
-        let json = #"{"layout":{"rows":1,"columns":2},"columnWeights":[0.25,0.75],"rowWeights":[1]}"#
+    @Test func cellsThatDontFitTheLayoutDecodeAsEqualCells() throws {
+        let json = #"{"layout":{"rows":1,"columns":2},"cells":[{"minX":0,"minY":0,"maxX":1,"maxY":1}]}"#
         let grid = try JSONDecoder().decode(TileGrid.self, from: Data(json.utf8))
-        #expect(grid.cells[0].maxX == 0.25)
-        #expect(grid.cells[1].minX == 0.25)
+        #expect(grid == TileGrid(try #require(TileLayout(rows: 1, columns: 2))))
     }
 
     @Test func matchesWindowsToCellsWithTolerance() {

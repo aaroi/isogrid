@@ -78,17 +78,6 @@ struct SetLibraryTests {
         #expect(library.sets.first?.members.count == 5)
     }
 
-    @Test func makeExclusiveKeepsSharedWindowsInTheNewestSet() {
-        var library = SetLibrary()
-        library.record(grid: grid, members: members([1, 2]), on: "A", at: t0)
-        library.record(grid: grid, members: members([3, 4]), on: "A", at: t0 + 1)
-        // A library saved before membership was exclusive: window 3 also sits in the older set.
-        library.sets[0].members.append(.init(windowID: 3, pid: 1, cell: 2))
-        library.makeExclusive()
-        #expect(library.set(inSlot: 1)?.members.map(\.windowID) == [1, 2])
-        #expect(library.set(inSlot: 2)?.members.map(\.windowID) == [3, 4])
-    }
-
     @Test func setsFollowADisplayToItsNewID() {
         var library = SetLibrary()
         library.record(grid: grid, members: members([1, 2]), on: "old", at: t0)

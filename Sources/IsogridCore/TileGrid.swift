@@ -165,23 +165,14 @@ public struct TileGrid: Hashable, Sendable {
 }
 
 extension TileGrid: Codable {
-    private enum CodingKeys: String, CodingKey { case layout, cells, columnWeights, rowWeights }
+    private enum CodingKeys: String, CodingKey { case layout, cells }
 
+    /// Saved cells that don't fit the layout fall back to equal ones.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(try container.decode(TileLayout.self, forKey: .layout))
         if let cells = try container.decodeIfPresent([Edges].self, forKey: .cells), cells.count == layout.cellCount {
             self.cells = cells
-        } else if let columns = try container.decodeIfPresent([Double].self, forKey: .columnWeights),
-                  let rows = try container.decodeIfPresent([Double].self, forKey: .rowWeights),
-                  columns.count == layout.columns, rows.count == layout.rows {
-            // Grids saved before cells had their own edges stored column and row sizes.
-            let xs = columns.reduce(into: [0.0]) { $0.append($0.last! + $1) }
-            let ys = rows.reduce(into: [0.0]) { $0.append($0.last! + $1) }
-            cells = (0..<layout.cellCount).map { index in
-                let row = index / layout.columns, column = index % layout.columns
-                return Edges(minX: xs[column], minY: ys[row], maxX: xs[column + 1], maxY: ys[row + 1])
-            }
         }
     }
 
@@ -189,19 +180,5 @@ extension TileGrid: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(layout, forKey: .layout)
         try container.encode(cells, forKey: .cells)
-    }
-}
-
-extension GridMath {
-    /// Pairs windows with the cell they occupy, meaning the centre is inside the cell and every
-    /// edge is within `tolerance`, which allows for apps that round sizes or enforce a minimum.
-    public static func match(windows: [CGRect], to cells: [CGRect], tolerance: CGFloat = 24) -> [Int?] {
-        windows.map { window in
-            cells.firstIndex { cell in
-                cell.contains(CGPoint(x: window.midX, y: window.midY))
-                    && abs(window.minX - cell.minX) <= tolerance && abs(window.maxX - cell.maxX) <= tolerance
-                    && abs(window.minY - cell.minY) <= tolerance && abs(window.maxY - cell.maxY) <= tolerance
-            }
-        }
     }
 }
