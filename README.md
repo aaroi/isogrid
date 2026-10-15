@@ -86,7 +86,7 @@ scripts/test.sh    # unit tests
 scripts/e2e.sh     # end-to-end against real windows, about 30 s
 ```
 
-The end-to-end test needs the Accessibility grant. It opens throwaway windows and drives a separate headless instance with its own settings, so your windows and sets are untouched. Leave the Mac alone while it runs.
+CI runs both on a hosted macOS runner for every pull request. Locally, the end-to-end test needs the Accessibility grant. It opens throwaway windows and drives a separate headless instance with its own settings, so your windows and sets are untouched. Leave the Mac alone while it runs.
 
 | Path | Contents |
 | --- | --- |

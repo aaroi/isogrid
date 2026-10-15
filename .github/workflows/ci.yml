@@ -12,3 +12,23 @@ jobs:
       - uses: actions/checkout@v5
       - run: scripts/test.sh
       - run: scripts/build.sh
+
+  e2e:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      # Isogrid moves windows through Accessibility, which hosted runners let a job grant: by
+      # bundle ID for the app LaunchServices starts, and by path for its executable.
+      - name: Allow Accessibility
+        run: |
+          allow() {
+            sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" "INSERT OR REPLACE INTO access
+              (service, client, client_type, auth_value, auth_reason, auth_version, csreq, policy_id,
+               indirect_object_identifier_type, indirect_object_identifier, indirect_object_code_identity, flags, last_modified)
+              VALUES ('kTCCServiceAccessibility', '$1', $2, 2, 4, 1, NULL, NULL, 0, 'UNUSED', NULL, 0, $(date +%s));"
+          }
+          allow dev.isogrid.Isogrid 0
+          allow "$PWD/build/Isogrid.app/Contents/MacOS/Isogrid" 1
+          sudo launchctl stop com.apple.tccd || true
+          sleep 2
+      - run: scripts/e2e.sh
