@@ -32,6 +32,9 @@ final class OverviewModel {
     @ObservationIgnored var onAllowPreviews: () -> Void = {}
     @ObservationIgnored var onDismiss: () -> Void = {}
 
+    /// Up to three cards a row, and two rows of two for four.
+    var columns: Int { cards.count == 4 ? 2 : min(max(cards.count, 1), 3) }
+
     func reset(cards: [OverviewCard]) {
         self.cards = cards
         selection = 0
@@ -85,7 +88,7 @@ struct OverviewView: View {
 
     private func cards(in size: CGSize) -> some View {
         let count = model.cards.count
-        let columns = count <= 3 ? count : (count == 4 ? 2 : 3)
+        let columns = model.columns
         let rows = Int(ceil(Double(count) / Double(columns)))
         let spacing: CGFloat = 36
         let aspect = model.cards.first?.aspect ?? 16 / 10
@@ -344,12 +347,12 @@ final class OverviewController: NSObject, NSWindowDelegate {
 
     private func handle(_ event: NSEvent) {
         switch Int(event.keyCode) {
-        case 0x35: close()
-        case 0x24, 0x4C: model.pick()
-        case 0x7B: model.move(by: -1)
-        case 0x7C: model.move(by: 1)
-        case 0x7E: model.move(by: -3)
-        case 0x7D: model.move(by: 3)
+        case kVK_Escape: close()
+        case kVK_Return, kVK_ANSI_KeypadEnter: model.pick()
+        case kVK_LeftArrow: model.move(by: -1)
+        case kVK_RightArrow: model.move(by: 1)
+        case kVK_UpArrow: model.move(by: -model.columns)
+        case kVK_DownArrow: model.move(by: model.columns)
         default:
             if let digit = event.charactersIgnoringModifiers?.first?.wholeNumberValue,
                let index = model.cards.firstIndex(where: { $0.slot == digit }) {
