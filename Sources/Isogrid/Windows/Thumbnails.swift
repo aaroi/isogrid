@@ -1,5 +1,5 @@
 import AppKit
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 
 /// Still images of windows for the overview. They need the optional Screen Recording
 /// permission; without it the overview shows app icons.
